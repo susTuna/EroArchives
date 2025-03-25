@@ -36,7 +36,7 @@ async def get_valid_ext(media_id: int) -> str:
             async with session.head(url) as response:
                 return ext if response.status == 200 else None
 
-        results = await asyncio.gather(check_ext(".jpg"), check_ext(".png"))
+        results = await asyncio.gather(check_ext(".jpg"), check_ext(".png"), check_ext(".webp"))
 
         return next((ext for ext in results if ext), None)
 

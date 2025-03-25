@@ -3,6 +3,7 @@ import aiohttp
 import asyncio
 import os
 import random
+from typing import Optional
 
 async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
     api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
@@ -38,7 +39,7 @@ async def get_valid_ext(media_id: int) -> str:
         results = await asyncio.gather(check_ext(".jpg"), check_ext(".png"))
 
         return next((ext for ext in results if ext), None)
-        
+
 async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
     async with aiohttp.ClientSession() as session:
         tasks = []

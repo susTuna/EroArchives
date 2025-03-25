@@ -1,51 +1,35 @@
-import requests
+import discord
 import os
+from GalleryPaginator import GalleryPaginator
+from discord.ext import commands
+from scraper import scrape_gallery
+from dotenv import load_dotenv
 
-def download_image(url, save_path):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    response = requests.get(url, headers=headers)
-    if response.status_code == 200:
-        with open(save_path, "wb") as f:
-            f.write(response.content)
-        print(f"Downloaded: {save_path}")
-    else:
-        print(f"❌ Failed to download {url} (Status: {response.status_code})")
+load_dotenv()
 
-def scrape_gallery(gallery_id):
-    api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    
-    response = requests.get(api_url, headers=headers)
-    if response.status_code != 200:
-        print(f"❌ Gagal mengambil galeri {gallery_id}! Status: {response.status_code}")
+TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+
+intents = discord.Intents.default()
+intents.message_content = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.command(name="search", help="Searching an NHentai gallery")
+async def search(ctx, gallery_id: str):
+    await ctx.send(f"🔍 Searching gallery {gallery_id}...")
+
+    result = await scrape_gallery(gallery_id)
+    if result is None:
+        await ctx.send("❌ Failed to fetch gallery!")
         return
-    
-    # Ambil JSON dari API
-    gallery_json = response.json()
-    
-    # Ambil media_id
-    media_id = gallery_json["media_id"]
-    print(f"✅ media_id ditemukan: {media_id}")
 
-    # Buat folder penyimpanan
-    folder_path = f"nhentai_images/{gallery_id}"
-    os.makedirs(folder_path, exist_ok=True)
+    media_id, num_pages, title, tags, image_urls = result
 
-    # Download Cover Image
-    cover_url = f"https://i3.nhentai.net/galleries/{media_id}/1.jpg"
-    download_image(cover_url, f"{folder_path}/cover.jpg")
+    embed = discord.Embed(title=f"{title} - {num_pages} Pages", description=f"Use the buttons below to scroll\n\n{", ".join(tags)}", color=0xFF0000)
+    embed.set_image(url=image_urls[0])
+    embed.set_footer(text=f"Page 1/{num_pages}")
 
-    # Ambil jumlah halaman
-    num_pages = gallery_json["num_pages"]
-    print(f"📄 Total halaman: {num_pages}")
+    view = GalleryPaginator(ctx, title, tags, image_urls)
+    await ctx.send(embed=embed, view=view)
 
-    # Download semua halaman
-    for page in range(1, num_pages + 1):
-        image_url = f"https://i2.nhentai.net/galleries/{media_id}/{page}.jpg"
-        download_image(image_url, f"{folder_path}/{page}.jpg")
-
-    print("✅ Semua gambar berhasil diunduh!")
-
-if __name__ == "__main__":
-    gallery_id = input("Masukkan ID gallery: ").strip()
-    scrape_gallery(gallery_id)
+bot.run(TOKEN)

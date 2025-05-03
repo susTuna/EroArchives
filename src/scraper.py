@@ -1,9 +1,13 @@
 import requests
+import logging
 import aiohttp
 import asyncio
 import os
 import random
 from typing import Optional
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
     api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
@@ -49,4 +53,20 @@ async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
 
         responses = await asyncio.gather(*tasks)
 
-    return [task.url.human_repr() for task in responses if task.status == 200]
+        urls = []
+    
+    for i, task in enumerate(responses):
+        url = task.url.human_repr()
+        if task.status == 200:
+            try:
+                async with session.get(url) as content_response:
+                    if content_response.status == 200:
+                        urls.append(url)
+                        logger.info(f"Successfully fetched and embedded: {url}")
+                    else:
+                        logger.warning(f"Failed to embed content at {url} with status {content_response.status}")
+            except Exception as e:
+                logger.error(f"Error fetching content from {url}: {e}")
+        else:
+            logger.warning(f"Failed to reach {url} with status {task.status}")
+    return urls

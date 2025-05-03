@@ -58,15 +58,9 @@ async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
     for i, task in enumerate(responses):
         url = task.url.human_repr()
         if task.status == 200:
-            try:
-                async with session.get(url) as content_response:
-                    if content_response.status == 200:
-                        urls.append(url)
-                        logger.info(f"Successfully fetched and embedded: {url}")
-                    else:
-                        logger.warning(f"Failed to embed content at {url} with status {content_response.status}")
-            except Exception as e:
-                logger.error(f"Error fetching content from {url}: {e}")
+            urls.append(url)
+            logger.info(f"Successfully fetched URL: {url}")
         else:
-            logger.warning(f"Failed to reach {url} with status {task.status}")
+            logger.warning(f"Failed to reach URL: {url} with status {task.status}")
+    
     return urls

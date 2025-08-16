@@ -2,7 +2,7 @@ import requests
 import logging
 import aiohttp
 import asyncio
-import os
+import re
 import random
 from typing import Optional
 
@@ -64,3 +64,37 @@ async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
             logger.warning(f"Failed to reach URL: {url} with status {task.status}")
     
     return urls
+
+async def scrape_web(url: str) -> Optional[tuple]:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    }
+
+    gallery_map = {}
+
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        return None
+
+    pattern = r'/g/(\d+)'
+
+    matches = re.findall(pattern, response.text)
+    if not matches:
+        logger.error("No gallery IDs found in the response.")
+        return None
+    
+    logger.info(f"Found gallery IDs: {matches}")
+
+    for match in matches:
+        gallery_id = int(match)
+        gallery_details = await scrape_gallery(gallery_id)
+        if gallery_details:
+            logger.info(f"Title: {gallery_details[2]}")
+            gallery_map[gallery_details[2]] = gallery_id
+        else:
+            logger.error(f"Failed to fetch details for gallery ID {gallery_id}")
+    
+    logger.info(f"Total gallery IDs found: {len(matches)}")
+    
+
+    return matches

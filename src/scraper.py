@@ -2,9 +2,9 @@ import requests
 import logging
 import aiohttp
 import asyncio
-import os
 import random
 from typing import Optional
+from doh import create_doh_connector
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -32,7 +32,8 @@ async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
     return media_id, num_pages, title, tags, image_urls
 
 async def get_valid_ext(media_id: int) -> str:
-    async with aiohttp.ClientSession() as session:
+    connector = create_doh_connector()
+    async with aiohttp.ClientSession(connector=connector) as session:
         base_url = f"https://i{random.randint(1, 4)}.nhentai.net/galleries/{media_id}/1"
 
         async def check_ext(ext):
@@ -45,7 +46,8 @@ async def get_valid_ext(media_id: int) -> str:
         return next((ext for ext in results if ext), None)
 
 async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
-    async with aiohttp.ClientSession() as session:
+    connector = create_doh_connector()
+    async with aiohttp.ClientSession(connector=connector) as session:
         tasks = []
         for i in range(1, num_pages + 1):
             url = f"https://i{random.randint(1, 4)}.nhentai.net/galleries/{media_id}/{i}{ext}"

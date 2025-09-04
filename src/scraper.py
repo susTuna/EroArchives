@@ -3,9 +3,8 @@ import logging
 import httpx
 import asyncio
 import re
-import random
 from typing import Optional
-from parser import scraper, parse_cdn_lists, parse_thumbnails
+from parser import scraper, parse_cdn_lists, parse_thumbnails, parse_title, parse_pagination
 from balancer import UrlTransformer
 
 logging.basicConfig(level=logging.INFO)
@@ -46,31 +45,39 @@ async def scrape_web(url: str) -> Optional[tuple]:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
     }
 
-    gallery_map = {}
-
     response = requests.get(url, headers=headers)
     if response.status_code != 200:
         return None
+    
+    responses = [response.text]
+
+    pagination_list = parse_pagination(responses[0])
+    if pagination_list:
+        for page in pagination_list:
+            responses.append(requests.get(f'https://nhentai.net{page}', headers=headers).text)
 
     pattern = r'/g/(\d+)'
 
-    matches = re.findall(pattern, response.text)
+    matches = [id for html in responses if html for id in re.findall(pattern, html)]
+    titles = [title for html in responses if html for title in parse_title(html)]
     if not matches:
         logger.error("No gallery IDs found in the response.")
         return None
+    elif not titles:
+        logger.error("No titles found in the response.")
+        return None
     
-    logger.info(f"Found gallery IDs: {matches}")
+    gallery_pairs = list(zip(titles, matches))
+    logger.info(f"Total galleries found: {len(gallery_pairs)}")
 
-    for match in matches:
-        gallery_id = int(match)
-        gallery_details = await scrape_gallery(gallery_id)
-        if gallery_details:
-            logger.info(f"Title: {gallery_details[2]}")
-            gallery_map[gallery_details[2]] = gallery_id
-        else:
-            logger.error(f"Failed to fetch details for gallery ID {gallery_id}")
-    
-    logger.info(f"Total gallery IDs found: {len(matches)}")
-    
+    return gallery_pairs
 
-    return matches
+async def scrape_title(title: str) -> Optional[tuple]:
+    if not title:
+        return None
+    
+    gallery_pairs = await scrape_web(f"https://nhentai.net/search/?q={title}")
+    if not gallery_pairs:
+        return None
+
+    return gallery_pairs

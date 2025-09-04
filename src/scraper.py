@@ -5,7 +5,7 @@ import asyncio
 import re
 import random
 from typing import Optional
-from parser import scraper, parse_cdn_lists, parse_thumbnails
+from parser import scraper, parse_cdn_lists, parse_thumbnails, parse_title
 from balancer import UrlTransformer
 
 logging.basicConfig(level=logging.INFO)
@@ -46,7 +46,7 @@ async def scrape_web(url: str) -> Optional[tuple]:
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
     }
 
-    gallery_map = {}
+    gallery_pairs = []
 
     response = requests.get(url, headers=headers)
     if response.status_code != 200:
@@ -55,33 +55,31 @@ async def scrape_web(url: str) -> Optional[tuple]:
     pattern = r'/g/(\d+)'
 
     matches = re.findall(pattern, response.text)
+    titles = parse_title(response.text)
     if not matches:
         logger.error("No gallery IDs found in the response.")
         return None
+    elif not titles:
+        logger.error("No titles found in the response.")
+        return None
     
-    logger.info(f"Found gallery IDs: {matches}")
-
-    for match in matches:
+    for i, match in enumerate(matches):
         gallery_id = int(match)
-        gallery_details = await scrape_gallery(gallery_id)
-        if gallery_details:
-            logger.info(f"Title: {gallery_details[2]}")
-            gallery_map[gallery_details[2]] = gallery_id
-        else:
-            logger.error(f"Failed to fetch details for gallery ID {gallery_id}")
-    
-    logger.info(f"Total gallery IDs found: {len(matches)}")
-    
+        print(f"Gallery ID: {gallery_id}")
+        gallery_pairs.append((titles[i], gallery_id))
+        print(f"Title: {titles[i]}")
 
-    return matches
+    #logger.info(f"Found galleries: {gallery_map}")
+    logger.info(f"Total galleries found: {len(gallery_pairs)}")
+
+    return gallery_pairs
 
 async def scrape_title(title: str) -> Optional[tuple]:
     if not title:
         return None
     
-    titles_id = await scrape_web(f"https://nhentai.net/search/?q={title}")
-    if not titles_id:
+    gallery_pairs = await scrape_web(f"https://nhentai.net/search/?q={title}")
+    if not gallery_pairs:
         return None
 
-    selected_title_id = titles_id[0]
-    return await scrape_gallery(selected_title_id)
+    return gallery_pairs

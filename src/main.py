@@ -32,4 +32,21 @@ async def search(ctx, gallery_id: str):
     view = GalleryPaginator(ctx, title, tags, image_urls)
     await ctx.send(embed=embed, view=view)
 
+async def search(ctx, string: str):
+    await ctx.send(f"🔍 Searching for {string}...")
+
+    result = await scrape_gallery(string)
+    if result is None:
+        await ctx.send("❌ Failed to fetch gallery!")
+        return
+
+    media_id, num_pages, title, tags, image_urls = result
+
+    embed = discord.Embed(title=f"{title} - {num_pages} Pages", description=f"Use the buttons below to scroll\n\n{", ".join(tags)}", color=0xFF0000)
+    embed.set_image(url=image_urls[0])
+    embed.set_footer(text=f"Page 1/{num_pages}")
+
+    view = GalleryPaginator(ctx, title, tags, image_urls)
+    await ctx.send(embed=embed, view=view)
+    
 bot.run(TOKEN)

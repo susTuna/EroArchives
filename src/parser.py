@@ -36,3 +36,17 @@ def parse_thumbnails(html_content):
             thumbnail_urls.append(full_url)
             
     return thumbnail_urls
+
+def parse_title(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    titles = []
+    container = soup.find('div', class_='container index-container')
+    if not container:
+        return []
+    
+    for title_tag in container.select('div.caption'):
+        title_text = title_tag.get_text(strip=True)
+        if title_text:
+            titles.append(title_text)
+
+    return titles

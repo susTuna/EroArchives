@@ -1,69 +1,45 @@
 import requests
 import logging
-import aiohttp
+import httpx
 import asyncio
 import re
 import random
 from typing import Optional
+from parser import scraper, parse_cdn_lists, parse_thumbnails
+from balancer import UrlTransformer
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
     api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
+    nhen_url = f"https://nhentai.net/g/{gallery_id}"
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    response = requests.get(api_url, headers=headers)
-    if response.status_code != 200:
+    async with httpx.AsyncClient(headers=headers) as client:
+        api_task = client.get(api_url)
+
+        url_task = asyncio.to_thread(scraper.get, nhen_url)
+
+        api_response, url_response = await asyncio.gather(api_task, url_task)
+
+    if api_response.status_code != 200 or url_response.status_code != 200:
+        print(f"Failed to fetch data. API Status: {api_response.status_code}, URL Status: {url_response.status_code}")
         return None
 
-    gallery_json = response.json()
+    gallery_json = api_response.json()
     media_id = gallery_json["media_id"]
     num_pages = gallery_json["num_pages"]
     title = gallery_json["title"]["english"]
-    tags = []
-    for tag in gallery_json["tags"] :
-        tags.append(tag["name"])
+    tags = [tag["name"] for tag in gallery_json["tags"]]
 
-    ext = await get_valid_ext(media_id)
+    thumb_cdn, image_cdn = parse_cdn_lists(url_response.text)
+    balancer = UrlTransformer(thumb_cdn, image_cdn)
+    thumbnail_urls = parse_thumbnails(url_response.text)
 
-    image_urls = await get_image_urls(media_id, num_pages, ext)
+    image_urls = balancer.transform_list(thumbnail_urls)
 
     return media_id, num_pages, title, tags, image_urls
-
-async def get_valid_ext(media_id: int) -> str:
-    async with aiohttp.ClientSession() as session:
-        base_url = f"https://i{random.randint(1, 4)}.nhentai.net/galleries/{media_id}/1"
-
-        async def check_ext(ext):
-            url = f"{base_url}{ext}"
-            async with session.head(url) as response:
-                return ext if response.status == 200 else None
-
-        results = await asyncio.gather(check_ext(".jpg"), check_ext(".png"), check_ext(".webp"))
-
-        return next((ext for ext in results if ext), None)
-
-async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
-    async with aiohttp.ClientSession() as session:
-        tasks = []
-        for i in range(1, num_pages + 1):
-            url = f"https://i{random.randint(1, 4)}.nhentai.net/galleries/{media_id}/{i}{ext}"
-            tasks.append(session.head(url))
-
-        responses = await asyncio.gather(*tasks)
-
-        urls = []
-    
-    for i, task in enumerate(responses):
-        url = task.url.human_repr()
-        if task.status == 200:
-            urls.append(url)
-            logger.info(f"Successfully fetched URL: {url}")
-        else:
-            logger.warning(f"Failed to reach URL: {url} with status {task.status}")
-    
-    return urls
 
 async def scrape_web(url: str) -> Optional[tuple]:
     headers = {

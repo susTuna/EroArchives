@@ -74,3 +74,14 @@ async def scrape_web(url: str) -> Optional[tuple]:
     
 
     return matches
+
+async def scrape_title(title: str) -> Optional[tuple]:
+    if not title:
+        return None
+    
+    titles_id = await scrape_web(f"https://nhentai.net/search/?q={title}")
+    if not titles_id:
+        return None
+
+    selected_title_id = titles_id[0]
+    return await scrape_gallery(selected_title_id)

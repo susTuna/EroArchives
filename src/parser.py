@@ -50,3 +50,41 @@ def parse_title(html_content):
             titles.append(title_text)
 
     return titles
+
+def parse_last_page(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    pagination = soup.find('section', class_='pagination')
+    if not pagination:
+        return 1
+    
+    last_page_link = pagination.find('a', class_='last')
+    try:
+        last_page = int(last_page_link.get('href').split('=')[-1])
+        return last_page
+    except (ValueError, IndexError):
+        return 1
+    
+def parse_next_page(html_content):
+    soup = BeautifulSoup(html_content, 'html.parser')
+    pagination = soup.find('section', class_='pagination')
+    if not pagination:
+        return None
+    
+    next_page_link = pagination.find('a', class_='next')
+    try:
+        next_page = next_page_link.get('href')
+        return next_page
+    except (ValueError, IndexError):
+        return None
+    
+def parse_pagination(html_content):
+    pages = []
+    last_page = parse_last_page(html_content)
+    next_page = parse_next_page(html_content)
+    if not last_page or not next_page:
+        return []
+    
+    base_url = next_page.rsplit('=', 1)[0] + '='
+    for i in range(2, last_page + 1):
+        pages.append(f"{base_url}{i}")
+    return pages

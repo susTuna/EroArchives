@@ -85,7 +85,7 @@ class ListPaginator(discord.ui.View):
             await interaction.edit_original_response(content="❌ Failed to fetch gallery!")
             return
 
-        media_id, num_pages, title, tags, image_urls = result
+        num_pages, title, tags, image_urls = result
 
         embed = discord.Embed(
             title=f"{title} - {num_pages} Pages",

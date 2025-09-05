@@ -6,9 +6,7 @@ import re
 from typing import Optional
 from parser import scraper, parse_cdn_lists, parse_thumbnails, parse_title, parse_pagination
 from balancer import UrlTransformer
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from logger import logger
 
 async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
     api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
@@ -23,7 +21,7 @@ async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
         api_response, url_response = await asyncio.gather(api_task, url_task)
 
     if api_response.status_code != 200 or url_response.status_code != 200:
-        print(f"Failed to fetch data. API Status: {api_response.status_code}, URL Status: {url_response.status_code}")
+        logger.error(f"Failed to fetch data. API Status: {api_response.status_code}, URL Status: {url_response.status_code}")
         return None
 
     gallery_json = api_response.json()
@@ -38,7 +36,7 @@ async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
 
     image_urls = balancer.transform_list(thumbnail_urls)
 
-    return media_id, num_pages, title, tags, image_urls
+    return num_pages, title, tags, image_urls
 
 async def scrape_web(url: str) -> Optional[tuple]:
     headers = {

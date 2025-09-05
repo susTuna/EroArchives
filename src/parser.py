@@ -2,6 +2,7 @@ import re
 import json
 import cloudscraper
 from bs4 import BeautifulSoup
+from logger import logger
 
 scraper = cloudscraper.create_scraper()
     
@@ -18,10 +19,12 @@ def parse_cdn_lists(html_content):
         
         return thumb_cdn_urls, image_cdn_urls
     except (AttributeError, json.JSONDecodeError) as e:
-        print(f"Error parsing CDN lists: {e}")
+        logger.error(f"Error parsing CDN lists: {e}")
         return None, None
 
 def parse_thumbnails(html_content):
+    pattern = r'(\.\w+)\1$'
+    replacement = r'\1'
     soup = BeautifulSoup(html_content, 'html.parser')
     thumbnail_urls = []
     
@@ -32,8 +35,10 @@ def parse_thumbnails(html_content):
     for thumb_link in container.select('a.gallerythumb img'):
         thumb_url = thumb_link.get('data-src')
         if thumb_url:
+            thumb_url = re.sub(pattern, replacement, thumb_url)
             full_url = "https:" + thumb_url
             thumbnail_urls.append(full_url)
+            logger.info(f"Fetched thumbnail url: {full_url}")
             
     return thumbnail_urls
 

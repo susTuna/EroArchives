@@ -1,5 +1,6 @@
 import re
 from urllib.parse import urlparse
+from logger import logger
 
 class UrlTransformer:
     def __init__(self, thumb_cdn_urls: list, image_cdn_urls: list):
@@ -24,10 +25,14 @@ class UrlTransformer:
 
             if hostname in self.thumb_cdn_set:
                 image_cdn = self._get_next_image_server()
-                return thumbnail_url.replace(hostname, image_cdn, 1)
+                replaced = thumbnail_url.replace(hostname, image_cdn, 1)
+                logger.info(f"Transformed URL: {replaced}")
+                return replaced
         except Exception:
+            logger.error(f"Unknown Exception: {thumbnail_url}")
             pass
             
+        logger.error(f"Failed to transform URL, returning original: {thumbnail_url}")
         return thumbnail_url
 
     def transform_list(self, thumbnail_urls: list) -> list:

@@ -23,7 +23,7 @@ def parse_cdn_lists(html_content):
         return None, None
 
 def parse_thumbnails(html_content):
-    pattern = r'(\.\w+)\1$'
+    pattern = r'(\.\w+)\.\w+$'
     replacement = r'\1'
     soup = BeautifulSoup(html_content, 'html.parser')
     thumbnail_urls = []

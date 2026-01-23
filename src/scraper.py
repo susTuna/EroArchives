@@ -1,68 +1,115 @@
-import requests
-import logging
-import aiohttp
-import asyncio
 import random
+import httpx
+import asyncio
+import re
 from typing import Optional
-from doh import create_doh_connector
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+from parser import scraper, parse_cdn_lists, parse_thumbnails, parse_title, parse_pagination
+from balancer import UrlTransformer
+from logger import logger
 
 async def scrape_gallery(gallery_id: int) -> Optional[tuple]:
     api_url = f"https://nhentai.net/api/gallery/{gallery_id}"
+    nhen_url = f"https://nhentai.net/g/{gallery_id}"
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    response = requests.get(api_url, headers=headers)
-    if response.status_code != 200:
+    async with httpx.AsyncClient(headers=headers) as client:
+        api_task = client.get(api_url)
+
+        url_task = asyncio.to_thread(scraper.get, nhen_url)
+
+        api_response, url_response = await asyncio.gather(api_task, url_task)
+
+    if api_response.status_code != 200 or url_response.status_code != 200:
+        logger.error(f"Failed to fetch data. API Status: {api_response.status_code}, URL Status: {url_response.status_code}")
         return None
 
-    gallery_json = response.json()
+    gallery_json = api_response.json()
     media_id = gallery_json["media_id"]
     num_pages = gallery_json["num_pages"]
     title = gallery_json["title"]["english"]
-    tags = []
-    for tag in gallery_json["tags"] :
-        tags.append(tag["name"])
+    tags = [tag["name"] for tag in gallery_json["tags"]]
 
-    ext = await get_valid_ext(media_id)
+    thumb_cdn, image_cdn = parse_cdn_lists(url_response.text)
+    balancer = UrlTransformer(thumb_cdn, image_cdn)
+    thumbnail_urls = parse_thumbnails(url_response.text)
 
-    image_urls = await get_image_urls(media_id, num_pages, ext)
+    image_urls = balancer.transform_list(thumbnail_urls)
 
-    return media_id, num_pages, title, tags, image_urls
+    return num_pages, title, tags, image_urls
 
-async def get_valid_ext(media_id: int) -> str:
-    connector = create_doh_connector()
-    async with aiohttp.ClientSession(connector=connector) as session:
-        base_url = f"https://i{random.randint(1, 4)}.nhentai.net/galleries/{media_id}/1"
+async def scrape_web(url: str) -> Optional[tuple]:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3"
+    }
 
-        async def check_ext(ext):
-            url = f"{base_url}{ext}"
-            async with session.head(url) as response:
-                return ext if response.status == 200 else None
-
-        results = await asyncio.gather(check_ext(".jpg"), check_ext(".png"), check_ext(".webp"))
-
-        return next((ext for ext in results if ext), None)
-
-async def get_image_urls(media_id: int, num_pages: int, ext: str) -> list:
-    connector = create_doh_connector()
-    async with aiohttp.ClientSession(connector=connector) as session:
-        tasks = []
-        for i in range(1, num_pages + 1):
-            url = f"https://i{random.randint(1, 4)}.nhentai.net/galleries/{media_id}/{i}{ext}"
-            tasks.append(session.head(url))
-
-        responses = await asyncio.gather(*tasks)
-
-        urls = []
-    
-    for i, task in enumerate(responses):
-        url = task.url.human_repr()
-        if task.status == 200:
-            urls.append(url)
-            logger.info(f"Successfully fetched URL: {url}")
+    async with httpx.AsyncClient(headers=headers, timeout=30.0) as client:
+        try:
+            logger.info(f"Fetching initial page: {url}")
+            first_page_response = await fetch_url_with_retry(client, url)
+            if not first_page_response:
+                return None
+            first_page_html = first_page_response.text
+        except httpx.RequestError as e:
+            logger.error(f"Failed to fetch initial page {url}: {e}")
+            return None
+        remaining_page_urls = parse_pagination(first_page_html)
+        logger.info(f"Found {len(remaining_page_urls)} additional pages to scrape concurrently.")
+        
+        if remaining_page_urls:
+            tasks = []
+            for page_url in remaining_page_urls:
+                full_url = f'https://nhentai.net{page_url}'
+                tasks.append(fetch_url_with_retry(client, full_url))
+            responses = await asyncio.gather(*tasks)
         else:
-            logger.warning(f"Failed to reach URL: {url} with status {task.status}")
+            responses = []
+
+        html_pages = [first_page_html]
+        for resp in responses:
+            if resp is not None:
+                html_pages.append(resp.text)
+        
+        logger.info(f"Processing content from {len(html_pages)} pages...")
+
+        pattern = r'/g/(\d+)'
+
+        matches = [id for html in html_pages if html for id in re.findall(pattern, html)]
+        titles = [title for html in html_pages if html for title in parse_title(html)]
+        if not matches:
+            logger.error("No gallery IDs found in the response.")
+            return None
+        elif not titles:
+            logger.error("No titles found in the response.")
+            return None
+        
+        gallery_pairs = list(zip(titles, matches))
+        logger.info(f"Total galleries found: {len(gallery_pairs)}")
+
+        return gallery_pairs
+
+async def scrape_title(title: str) -> Optional[tuple]:
+    if not title:
+        return None
     
-    return urls
+    gallery_pairs = await scrape_web(f"https://nhentai.net/search/?q={title}")
+    if not gallery_pairs:
+        return None
+
+    return gallery_pairs
+
+async def fetch_url_with_retry(client: httpx.AsyncClient, url: str, retries=5, base_delay=1.0) -> Optional[httpx.Response]:
+    for attempt in range(retries):
+        try:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
+            if attempt + 1 == retries:
+                logger.error(f"Final attempt failed for {url}: {e}")
+                break
+
+            delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+            logger.warning(f"Request failed for {url} (Attempt {attempt + 1}/{retries}). Retrying in {delay:.2f}s...")
+            await asyncio.sleep(delay)
+            
+    return None

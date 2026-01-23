@@ -1,0 +1,8 @@
+services:
+  bot-gateway:
+    build: .
+    container_name: EroArchives
+    environment:
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DNS_SERVERS={DNS_SERVERS}
+    restart: unless-stopped
